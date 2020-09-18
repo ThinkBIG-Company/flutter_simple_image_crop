@@ -11,3 +11,5 @@ pubspec.lock
 build/
 example/.flutter-plugins-dependencies
 *.sh
+example/.flutter-plugins-dependencies
+example/ios/Flutter/flutter_export_environment.sh
