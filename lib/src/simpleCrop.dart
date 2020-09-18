@@ -12,20 +12,22 @@ class ImgCrop extends StatefulWidget {
   final double maximumScale;
   final ImageErrorListener onImageError;
   final double chipRadius; // 裁剪半径
+  final double chipHeightRatio;
   final ChipShape chipShape; // 裁剪区域形状
   final double handleSize;
+
   const ImgCrop(
       {Key key,
       this.image,
       this.maximumScale: 2.0,
       this.onImageError,
       this.chipRadius = 150,
-	  this.chipHeightRatio = 1.0,
+      this.chipHeightRatio = 1.0,
       this.chipShape = ChipShape.circle,
-	  this.handleSize = 10.0})
+      this.handleSize = 10.0})
       : assert(image != null),
         assert(maximumScale != null),
-		assert(handleSize != null && handleSize >= 0.0),
+        assert(handleSize != null && handleSize >= 0.0),
         super(key: key);
 
   ImgCrop.file(File file,
@@ -34,25 +36,24 @@ class ImgCrop extends StatefulWidget {
       this.maximumScale: 2.0,
       this.onImageError,
       this.chipRadius = 150,
-	  this.chipHeightRatio = 1.0,
+      this.chipHeightRatio = 1.0,
       this.chipShape = ChipShape.circle,
       this.handleSize = 10.0})
       : image = FileImage(file, scale: scale),
         assert(maximumScale != null),
         super(key: key);
 
-  ImgCrop.asset(
-    String assetName, {
-    Key key,
-    AssetBundle bundle,
-    String package,
-    this.chipRadius = 150,
-	this.chipHeightRatio = 1.0,
-    this.maximumScale: 2.0,
-    this.onImageError,
-    this.chipShape = ChipShape.circle,
-	this.handleSize = 10.0
-  })  : image = AssetImage(assetName, bundle: bundle, package: package),
+  ImgCrop.asset(String assetName,
+      {Key key,
+      AssetBundle bundle,
+      String package,
+      this.chipRadius = 150,
+      this.chipHeightRatio = 1.0,
+      this.maximumScale: 2.0,
+      this.onImageError,
+      this.chipShape = ChipShape.circle,
+      this.handleSize = 10.0})
+      : image = AssetImage(assetName, bundle: bundle, package: package),
         assert(maximumScale != null),
         super(key: key);
 
@@ -183,7 +184,7 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
               scale: _scale,
               active: _activeController.value,
               chipShape: widget.chipShape,
-			  handleSize: widget.handleSize),
+              handleSize: widget.handleSize),
         ),
       ),
     );
@@ -202,12 +203,12 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     return _surfaceKey.currentContext.size -
         Offset(widget.handleSize, widget.handleSize);
   }
-  
+
   // Make sure if widget.chipHeightRatio between 0 - 1.0
   double get chipHeightRatio {
-    return widget.chipHeightRatio > 1.0 ? 1.0 
-      : widget.chipHeightRatio < 0.0 ? 0.0
-      : widget.chipHeightRatio;
+    return widget.chipHeightRatio > 1.0
+        ? 1.0
+        : widget.chipHeightRatio < 0.0 ? 0.0 : widget.chipHeightRatio;
   }
 
   void _settleAnimationChanged() {
@@ -234,8 +235,8 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     final _areaOffsetRadio = _areaOffset / _deviceWidth;
     final width = 1.0 - _areaOffsetRadio;
 
-    final height =
-        (imageWidth * viewWidth * width) / (imageHeight * viewHeight / chipHeightRatio);
+    final height = (imageWidth * viewWidth * width) /
+        (imageHeight * viewHeight / chipHeightRatio);
     return Rect.fromLTWH((1.0 - width) / 2, (1.0 - height) / 2, width, height);
   }
 
@@ -393,7 +394,7 @@ class _CropPainter extends CustomPainter {
       this.scale,
       this.active,
       this.chipShape,
-	  this.handleSize});
+      this.handleSize});
 
   @override
   bool shouldRepaint(_CropPainter oldDelegate) {
