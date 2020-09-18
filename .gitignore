@@ -9,3 +9,5 @@ pubspec.lock
 *.iml
 
 build/
+example/.flutter-plugins-dependencies
+*.sh
