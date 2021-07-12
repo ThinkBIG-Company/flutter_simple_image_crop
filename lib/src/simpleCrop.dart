@@ -3,21 +3,19 @@ part of image_crop;
 const _kCropOverlayActiveOpacity = 0.3;
 const _kCropOverlayInactiveOpacity = 0.7;
 
-enum _CropAction { none, moving, scaling }
-
 enum ChipShape { circle, rect }
 
 class ImgCrop extends StatefulWidget {
-  final ImageProvider image;
+  final ImageProvider? image;
   final double maximumScale;
-  final ImageErrorListener onImageError;
+  final ImageErrorListener? onImageError;
   final double chipRadius; // 裁剪半径
   final double chipHeightRatio;
   final ChipShape chipShape; // 裁剪区域形状
   final double handleSize;
 
-  const ImgCrop(
-      {Key key,
+  ImgCrop(
+      {Key? key,
       this.image,
       this.maximumScale: 2.0,
       this.onImageError,
@@ -26,12 +24,24 @@ class ImgCrop extends StatefulWidget {
       this.chipShape = ChipShape.circle,
       this.handleSize = 10.0})
       : assert(image != null),
-        assert(maximumScale != null),
-        assert(handleSize != null && handleSize >= 0.0),
+        assert(handleSize >= 0.0),
+        super(key: key);
+
+  ImgCrop.asset(String assetName,
+      {Key? key,
+      AssetBundle? bundle,
+      String? package,
+      this.chipRadius = 150,
+      this.chipHeightRatio = 1.0,
+      this.maximumScale: 2.0,
+      this.onImageError,
+      this.chipShape = ChipShape.circle,
+      this.handleSize = 10.0})
+      : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
   ImgCrop.file(File file,
-      {Key key,
+      {Key? key,
       double scale = 1.0,
       this.maximumScale: 2.0,
       this.onImageError,
@@ -40,52 +50,35 @@ class ImgCrop extends StatefulWidget {
       this.chipShape = ChipShape.circle,
       this.handleSize = 10.0})
       : image = FileImage(file, scale: scale),
-        assert(maximumScale != null),
-        super(key: key);
-
-  ImgCrop.asset(String assetName,
-      {Key key,
-      AssetBundle bundle,
-      String package,
-      this.chipRadius = 150,
-      this.chipHeightRatio = 1.0,
-      this.maximumScale: 2.0,
-      this.onImageError,
-      this.chipShape = ChipShape.circle,
-      this.handleSize = 10.0})
-      : image = AssetImage(assetName, bundle: bundle, package: package),
-        assert(maximumScale != null),
         super(key: key);
 
   @override
   State<StatefulWidget> createState() => ImgCropState();
 
-  static ImgCropState of(BuildContext context) {
+  static ImgCropState? of(BuildContext context) {
     return context.findAncestorStateOfType();
   }
 }
 
 class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
   final _surfaceKey = GlobalKey();
-  AnimationController _activeController;
-  AnimationController _settleController;
-  ImageStream _imageStream;
-  ui.Image _image;
-  double _scale;
-  double _ratio;
-  Rect _view;
-  Rect _area;
-  Offset _lastFocalPoint;
-  _CropAction _action;
-  double _startScale;
-  Rect _startView;
-  Tween<Rect> _viewTween;
-  Tween<double> _scaleTween;
-  ImageStreamListener _imageListener;
+  late AnimationController _activeController;
+  late AnimationController _settleController;
+  late ImageStream _imageStream;
+  late ui.Image _image;
+  late double _scale;
+  late double _ratio;
+  late Rect _view;
+  late Rect _area;
+  late Offset _lastFocalPoint;
+  late _CropAction _action;
+  late double _startScale;
+  late Rect _startView;
+  late Tween<Rect> _viewTween;
+  late Tween<double> _scaleTween;
+  late ImageStreamListener _imageListener;
 
-  double get scale => _area.shortestSide / _scale;
-
-  Rect get area {
+  Rect? get area {
     return _view.isEmpty
         ? null
         : Rect.fromLTWH(
@@ -96,73 +89,30 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
           );
   }
 
-  bool get _isEnabled => !_view.isEmpty && _image != null;
-
-  @override
-  void initState() {
-    super.initState();
-    _area = Rect.zero;
-    _view = Rect.zero;
-    _scale = 1.0;
-    _ratio = 1.0;
-    _lastFocalPoint = Offset.zero;
-    _action = _CropAction.none;
-    _activeController = AnimationController(
-      vsync: this,
-      value: 0.0,
-    )..addListener(() => setState(() {})); // 裁剪背景灰度控制
-    _settleController = AnimationController(vsync: this)
-      ..addListener(_settleAnimationChanged);
+  double get chipHeightRatio {
+    return widget.chipHeightRatio > 1.0
+        ? 1.0
+        : widget.chipHeightRatio < 0.0
+            ? 0.0
+            : widget.chipHeightRatio;
   }
 
-  @override
-  void dispose() {
-    _imageStream?.removeListener(_imageListener);
-    _activeController.dispose();
-    _settleController.dispose();
-    super.dispose();
+  double get scale => _area.shortestSide / _scale;
+
+  Size? get _boundaries {
+    //return _surfaceKey.currentContext.size - Offset(widget.handleSize, widget.handleSize);
+    return _surfaceKey.currentContext!.size;
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _getImage();
-  }
+  bool get _isEnabled => !_view.isEmpty;
 
-  @override
-  void didUpdateWidget(ImgCrop oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.image != oldWidget.image) {
-      _getImage();
-    }
-    _activate(1.0);
-  }
+  double get _maximumScale => widget.maximumScale;
 
-  Future<File> cropCompleted(File file, {int pictureQuality = 100}) async {
-    final options = await ImageCrop.getImageOptions(file: file);
-    debugPrint('image width: ${options.width}, height: ${options.height}');
-    final sampleFile = await ImageCrop.sampleImage(
-      file: file,
-      preferredWidth: (pictureQuality / scale).round(),
-      preferredHeight: (pictureQuality / scale).round(),
-    );
-
-    final croppedFile = await ImageCrop.cropImage(
-      file: sampleFile,
-      area: area,
-    );
-    return croppedFile;
-  }
-
-  void _getImage({bool force: false}) {
-    final oldImageStream = _imageStream;
-    _imageStream = widget.image.resolve(createLocalImageConfiguration(context));
-    if (_imageStream.key != oldImageStream?.key || force) {
-      oldImageStream?.removeListener(_imageListener);
-      _imageListener =
-          ImageStreamListener(_updateImage, onError: widget.onImageError);
-      _imageStream.addListener(_imageListener);
-    }
+  double get _minimumScale {
+    final scaleX = _boundaries!.width * _area.width / (_image.width * _ratio);
+    final scaleY =
+        _boundaries!.height * _area.height / (_image.height * _ratio);
+    return min(_maximumScale, max(scaleX, scaleY));
   }
 
   @override
@@ -190,6 +140,61 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     );
   }
 
+  Future<File> cropCompleted(File file, {int pictureQuality = 100}) async {
+    final options = await ImageCrop.getImageOptions(file: file);
+    debugPrint('image width: ${options.width}, height: ${options.height}');
+    final sampleFile = await ImageCrop.sampleImage(
+      file: file,
+      preferredWidth: (pictureQuality / scale).round(),
+      preferredHeight: (pictureQuality / scale).round(),
+    );
+
+    final croppedFile = await ImageCrop.cropImage(file: sampleFile, area: area);
+    return croppedFile;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _getImage();
+  }
+
+  @override
+  void didUpdateWidget(ImgCrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.image != oldWidget.image) {
+      _getImage();
+    }
+    _activate(1.0);
+  }
+
+  // NOTE: 区域性缩小 总区域 - 10 * 10 区域
+  @override
+  void dispose() {
+    _imageStream.removeListener(_imageListener);
+    _activeController.dispose();
+    _settleController.dispose();
+    super.dispose();
+  }
+
+  // Make sure if widget.chipHeightRatio between 0 - 1.0
+  @override
+  void initState() {
+    super.initState();
+    _area = Rect.zero;
+    _view = Rect.zero;
+    _scale = 1.0;
+    _ratio = 1.0;
+    _lastFocalPoint = Offset.zero;
+    _action = _CropAction.none;
+    _activeController = AnimationController(
+      vsync: this,
+      value: 0.0,
+    )..addListener(() => setState(() {})); // 裁剪背景灰度控制
+    _settleController = AnimationController(vsync: this)
+      ..addListener(_settleAnimationChanged);
+  }
+
   void _activate(double val) {
     _activeController.animateTo(
       val,
@@ -198,32 +203,11 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     );
   }
 
-  // NOTE: 区域性缩小 总区域 - 10 * 10 区域
-  Size get _boundaries {
-    return _surfaceKey.currentContext.size -
-        Offset(widget.handleSize, widget.handleSize);
-  }
-
-  // Make sure if widget.chipHeightRatio between 0 - 1.0
-  double get chipHeightRatio {
-    return widget.chipHeightRatio > 1.0
-        ? 1.0
-        : widget.chipHeightRatio < 0.0 ? 0.0 : widget.chipHeightRatio;
-  }
-
-  void _settleAnimationChanged() {
-    setState(() {
-      _scale = _scaleTween.transform(_settleController
-          .value); // 将0 ～ 1的动画转变过程，转换至 _scaleTween 的begin ~ end
-      _view = _viewTween.transform(_settleController.value);
-    });
-  }
-
   Rect _calculateDefaultArea({
-    int imageWidth,
-    int imageHeight,
-    double viewWidth,
-    double viewHeight,
+    int? imageWidth,
+    int? imageHeight,
+    double? viewWidth,
+    double? viewHeight,
   }) {
     if (imageWidth == null || imageHeight == null) {
       return Rect.zero;
@@ -235,53 +219,21 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     final _areaOffsetRadio = _areaOffset / _deviceWidth;
     final width = 1.0 - _areaOffsetRadio;
 
-    final height = (imageWidth * viewWidth * width) /
-        (imageHeight * viewHeight / chipHeightRatio);
+    final height = (imageWidth * viewWidth! * width) /
+        (imageHeight * viewHeight! / chipHeightRatio);
     return Rect.fromLTWH((1.0 - width) / 2, (1.0 - height) / 2, width, height);
   }
 
-  void _updateImage(ImageInfo imageInfo, bool synchronousCall) {
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      setState(() {
-        _image = imageInfo.image;
-        _scale = imageInfo.scale;
-
-        // NOTE: conver img  _ratio value >= 0
-        _ratio = max(
-          _boundaries.width / _image.width,
-          _boundaries.height / _image.height,
-        );
-
-        // NOTE: 计算图片显示比值，最大1.0为全部显示
-        final viewWidth = _boundaries.width / (_image.width * _scale * _ratio);
-        final viewHeight =
-            _boundaries.height / (_image.height * _scale * _ratio);
-        _area = _calculateDefaultArea(
-          viewWidth: viewWidth,
-          viewHeight: viewHeight,
-          imageWidth: _image.width,
-          imageHeight: _image.height,
-        );
-
-        // NOTE: 相对于整体图片已显示的view大小， viewWidth - 1.0 为未显示区域， / 2 算出 left的比例模型
-        _view = Rect.fromLTWH(
-          (viewWidth - 1.0) / 2,
-          (viewHeight - 1.0) / 2,
-          viewWidth,
-          viewHeight,
-        );
-      });
-    });
-    WidgetsBinding.instance.ensureVisualUpdate();
-  }
-
-  void _handleScaleStart(ScaleStartDetails details) {
-    _activate(1.0);
-    _settleController.stop(canceled: false);
-    _lastFocalPoint = details.focalPoint;
-    _action = _CropAction.none;
-    _startScale = _scale;
-    _startView = _view;
+  void _getImage({bool force: false}) {
+    final oldImageStream = _imageStream;
+    _imageStream =
+        widget.image!.resolve(createLocalImageConfiguration(context));
+    if (_imageStream.key != oldImageStream.key || force) {
+      oldImageStream.removeListener(_imageListener);
+      _imageListener =
+          ImageStreamListener(_updateImage, onError: widget.onImageError);
+      _imageStream.addListener(_imageListener);
+    }
   }
 
   Rect _getViewInBoundaries(double scale) {
@@ -304,14 +256,6 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
         _view.size;
   }
 
-  double get _maximumScale => widget.maximumScale;
-
-  double get _minimumScale {
-    final scaleX = _boundaries.width * _area.width / (_image.width * _ratio);
-    final scaleY = _boundaries.height * _area.height / (_image.height * _ratio);
-    return min(_maximumScale, max(scaleX, scaleY));
-  }
-
   void _handleScaleEnd(ScaleEndDetails details) {
     _activate(0);
 
@@ -326,7 +270,7 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     _viewTween = RectTween(
       begin: _view,
       end: _getViewInBoundaries(targetScale),
-    );
+    ) as Tween<ui.Rect>;
 
     _settleController.value = 0.0;
     _settleController.animateTo(
@@ -336,7 +280,15 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
     );
   }
 
-  // 手势触发过程 判断action 类型:移动或者缩放, 跟新view 重绘image
+  void _handleScaleStart(ScaleStartDetails details) {
+    _activate(1.0);
+    _settleController.stop(canceled: false);
+    _lastFocalPoint = details.focalPoint;
+    _action = _CropAction.none;
+    _startScale = _scale;
+    _startView = _view;
+  }
+
   void _handleScaleUpdate(ScaleUpdateDetails details) {
     _action = details.rotation == 0.0 && details.scale == 1.0
         ? _CropAction.moving
@@ -358,10 +310,10 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
         _scale = _startScale * details.scale;
 
         // 计算已缩放的比值；
-        final dx = _boundaries.width *
+        final dx = _boundaries!.width *
             (1.0 - details.scale) /
             (_image.width * _scale * _ratio);
-        final dy = _boundaries.height *
+        final dy = _boundaries!.height *
             (1.0 - details.scale) /
             (_image.height * _scale * _ratio);
 
@@ -374,17 +326,63 @@ class ImgCropState extends State<ImgCrop> with TickerProviderStateMixin, Drag {
       });
     }
   }
+
+  void _settleAnimationChanged() {
+    setState(() {
+      _scale = _scaleTween.transform(_settleController
+          .value); // 将0 ～ 1的动画转变过程，转换至 _scaleTween 的begin ~ end
+      _view = _viewTween.transform(_settleController.value);
+    });
+  }
+
+  // 手势触发过程 判断action 类型:移动或者缩放, 跟新view 重绘image
+  void _updateImage(ImageInfo imageInfo, bool synchronousCall) {
+    WidgetsBinding.instance!.addPostFrameCallback((timeStamp) {
+      setState(() {
+        _image = imageInfo.image;
+        _scale = imageInfo.scale;
+
+        // NOTE: conver img  _ratio value >= 0
+        _ratio = max(
+          _boundaries!.width / _image.width,
+          _boundaries!.height / _image.height,
+        );
+
+        // NOTE: 计算图片显示比值，最大1.0为全部显示
+        final viewWidth = _boundaries!.width / (_image.width * _scale * _ratio);
+        final viewHeight =
+            _boundaries!.height / (_image.height * _scale * _ratio);
+        _area = _calculateDefaultArea(
+          viewWidth: viewWidth,
+          viewHeight: viewHeight,
+          imageWidth: _image.width,
+          imageHeight: _image.height,
+        );
+
+        // NOTE: 相对于整体图片已显示的view大小， viewWidth - 1.0 为未显示区域， / 2 算出 left的比例模型
+        _view = Rect.fromLTWH(
+          (viewWidth - 1.0) / 2,
+          (viewHeight - 1.0) / 2,
+          viewWidth,
+          viewHeight,
+        );
+      });
+    });
+    WidgetsBinding.instance!.ensureVisualUpdate();
+  }
 }
 
+enum _CropAction { none, moving, scaling }
+
 class _CropPainter extends CustomPainter {
-  final ui.Image image;
-  final Rect view;
-  final double ratio;
-  final Rect area;
-  final double scale;
-  final double active;
-  final ChipShape chipShape;
-  final double handleSize;
+  final ui.Image? image;
+  final Rect? view;
+  final double? ratio;
+  final Rect? area;
+  final double? scale;
+  final double? active;
+  final ChipShape? chipShape;
+  final double? handleSize;
 
   _CropPainter(
       {this.image,
@@ -396,32 +394,22 @@ class _CropPainter extends CustomPainter {
       this.chipShape,
       this.handleSize});
 
-  @override
-  bool shouldRepaint(_CropPainter oldDelegate) {
-    return oldDelegate.image != image ||
-        oldDelegate.view != view ||
-        oldDelegate.ratio != ratio ||
-        oldDelegate.area != area ||
-        oldDelegate.active != active ||
-        oldDelegate.scale != scale;
+  Rect currentBoundaries(size) {
+    var rect = currentRact(size);
+    return Rect.fromLTWH(
+      rect.width * area!.left,
+      rect.height * area!.top,
+      rect.width * area!.width,
+      rect.height * area!.height,
+    );
   }
 
   currentRact(size) {
     return Rect.fromLTWH(
-      handleSize / 2,
-      handleSize / 2,
+      handleSize! / 2,
+      handleSize! / 2,
       size.width - handleSize,
       size.height - handleSize,
-    );
-  }
-
-  Rect currentBoundaries(size) {
-    var rect = currentRact(size);
-    return Rect.fromLTWH(
-      rect.width * area.left,
-      rect.height * area.top,
-      rect.width * area.width,
-      rect.height * area.height,
     );
   }
 
@@ -438,19 +426,19 @@ class _CropPainter extends CustomPainter {
       final src = Rect.fromLTWH(
         0.0,
         0.0,
-        image.width.toDouble(),
-        image.height.toDouble(),
+        image!.width.toDouble(),
+        image!.height.toDouble(),
       );
       final dst = Rect.fromLTWH(
-        view.left * image.width * scale * ratio,
-        view.top * image.height * scale * ratio,
-        image.width * scale * ratio,
-        image.height * scale * ratio,
+        view!.left * image!.width * scale! * ratio!,
+        view!.top * image!.height * scale! * ratio!,
+        image!.width * scale! * ratio!,
+        image!.height * scale! * ratio!,
       );
 
       canvas.save();
       canvas.clipRect(Rect.fromLTWH(0.0, 0.0, rect.width, rect.height));
-      canvas.drawImageRect(image, src, dst, paint);
+      canvas.drawImageRect(image!, src, dst, paint);
       canvas.restore();
     }
 
@@ -458,8 +446,8 @@ class _CropPainter extends CustomPainter {
         0x0,
         0x0,
         0x0,
-        _kCropOverlayActiveOpacity * active +
-            _kCropOverlayInactiveOpacity * (1.0 - active));
+        _kCropOverlayActiveOpacity * active! +
+            _kCropOverlayInactiveOpacity * (1.0 - active!));
     final boundaries = currentBoundaries(size);
     final _path1 = Path()
       ..addRect(Rect.fromLTRB(0.0, 0.0, rect.width, rect.height));
@@ -500,5 +488,15 @@ class _CropPainter extends CustomPainter {
     }
 
     canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_CropPainter oldDelegate) {
+    return oldDelegate.image != image ||
+        oldDelegate.view != view ||
+        oldDelegate.ratio != ratio ||
+        oldDelegate.area != area ||
+        oldDelegate.active != active ||
+        oldDelegate.scale != scale;
   }
 }
